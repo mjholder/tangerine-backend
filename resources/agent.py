@@ -148,6 +148,7 @@ class AgentDocUpload(Resource):
         
         processed_files = build_files_to_process()
 
+
         def generate_progress():
             #for filename, file_content in file_contents:
             for processed_file in processed_files:

@@ -70,10 +70,8 @@ class VectorStoreInterface():
         docs = self.split_document(text, agent_id, filename, path)
         try:
             self.store.add_documents(docs, ids=[f"{path}{filename}|{index}" for index in range(len(docs))])
-            return len(docs)
         except Exception as e:
             print(f"Error adding_documents: {e}")
-            return 0
     
     def delete_document(self, filename, path, total_chunks):
         for chunk in range(total_chunks):
