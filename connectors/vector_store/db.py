@@ -24,6 +24,15 @@ class Agents(db.Model):
         return f'<Agents {self.id}>'
 
 
+class DocumentIDs(db.Model):
+    path = db.Column(db.String(50), nullable=False, unique=True)
+    filename = db.Column(db.String(50), nullable=False, unique=True)
+    total_chunks = db.Column(db.Integer, nullable=False)
+
+    def __repr__(self):
+        return f'<DocumentIDs {self.path}{self.filename} with {self.total_chunks} chunks'
+
+
 class VectorStoreInterface():
     def __init__(self):
         self.store = None
@@ -46,21 +55,30 @@ class VectorStoreInterface():
             print(f"Error init_vector_store: {e}")
         return
 
-    def add_document(self, text, agent_id, filename):
-        documents = [Document(page_content=text, metadata={"agent_id": agent_id, "filename": filename})]
+    def split_document(self, text, agent_id, filename, path):
+        documents = [Document(page_content=text, metadata={"agent_id": agent_id, "filename": filename, "path": path})]
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=self.vector_chunk_size,
             chunk_overlap=self.vector_chunk_overlap,
             length_function=len,
             is_separator_regex=False
         )
-        docs = text_splitter.split_documents(documents)
+        return text_splitter.split_documents(documents)
 
+    # returns chunk count of document so agents know
+    def add_document(self, text, agent_id, filename, path):
+        docs = self.split_document(text, agent_id, filename, path)
         try:
-            self.store.add_documents(docs)
+            self.store.add_documents(docs, ids=[f"{path}{filename}|{index}" for index in range(len(docs))])
+            return len(docs)
         except Exception as e:
             print(f"Error adding_documents: {e}")
-
+            return 0
+    
+    def delete_document(self, filename, path, total_chunks):
+        for chunk in range(total_chunks):
+            self.store.delete(f"{path}{filename}|{chunk}")
+        
         return
 
     def search(self, query, agent_id):

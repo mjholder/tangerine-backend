@@ -3,7 +3,7 @@ from flask import Response, request
 from flask_restful import Resource
 import time
 
-from connectors.vector_store.db import db, Agents
+from connectors.vector_store.db import db, Agents, DocumentIDs
 from connectors.vector_store.db import vector_interface
 from connectors.llm.interface import llm
 from utils.processors import text_extractor
@@ -109,6 +109,7 @@ class AgentDocUpload(Resource):
             return {'message': 'No file part'}, 400
 
         files = request.files.getlist('file')
+        path = request.form.get('path')
 
         file_contents=[]
         for file in files:
@@ -125,23 +126,56 @@ class AgentDocUpload(Resource):
         for fileinfo in file_contents:
             new_filenames.append(fileinfo[0])
         agent.filenames = new_filenames
-        db.session.commit()
 
-        def generate_progress():
+
+        def build_files_to_process():
+            result = []
             for filename, file_content in file_contents:
-                yield json.dumps({"file": filename, "step": "start"}) + "\n"
                 extracted_text = text_extractor(filename, file_content)
-                yield json.dumps({"file": filename, "step": "text_extracted"}) + "\n"
 
                 # Only generate embeddings when there is actual texts
                 if len(extracted_text) > 0:
-                    vector_interface.add_document(extracted_text, id, filename)
-                    yield json.dumps({"file": filename, "step": "embedding_created"}) + "\n"
+                    total_chunks = len(vector_interface.split_document(extracted_text, id, filename, path))
+                    result.append({
+                        "agent_id": id, 
+                        "extracted_text": extracted_text, 
+                        "filename": filename, 
+                        "path": path, 
+                        "total_chunks": total_chunks
+                    })
 
-                yield json.dumps({"file": filename, "step": "end"}) + "\n"
+            return result
+        
+        processed_files = build_files_to_process()
 
+        def generate_progress():
+            #for filename, file_content in file_contents:
+            for processed_file in processed_files:
+                yield json.dumps({"file": processed_file["filename"], "step": "start"}) + "\n"
+                extracted_text = processed_file["extracted_text"]
+                yield json.dumps({"file": processed_file["filename"], "step": "text_extracted"}) + "\n"
+
+                # Only generate embeddings when there is actual texts
+                if len(extracted_text) > 0:
+                    total_chunks = vector_interface.add_document(processed_file["text"], processed_file["agent_id"], processed_file["filename"], processed_file["path"])
+                    yield json.dumps({"file": processed_file["filename"], "step": "embedding_created"}) + "\n"
+
+                yield json.dumps({"file": processed_file["filename"], "step": "end"}) + "\n"
+
+        db.session.commit()
         return Response(generate_progress(), mimetype='application/json')
 
+    def add_document_id(self, filename, path, total_chunks):
+        print(f"{path}{filename}:{total_chunks}")
+        document_id = {
+            "path": path,
+            "filename": filename,
+            "total_chunks": total_chunks
+        }
+
+        new_data = DocumentIDs(**document_id)
+        db.session.add(new_data)
+        db.session.commit()
 
 class AgentChatApi(Resource):
     def post(self,id):
