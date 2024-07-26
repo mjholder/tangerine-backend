@@ -1,4 +1,5 @@
 import json
+import uuid
 from flask import Response, request
 from flask_restful import Resource
 import time
@@ -148,6 +149,17 @@ class AgentDocUpload(Resource):
         
         processed_files = build_files_to_process()
 
+        for processed_file in processed_files:
+            metadata = {
+                "agent_id": id,
+                "path": processed_file["path"],
+                "filename": processed_file["filename"],
+                "total_chunks": processed_file["total_chunks"]
+            }
+
+            new_data = DocumentIDs(**metadata)
+            db.session.add(new_data)
+
 
         def generate_progress():
             #for filename, file_content in file_contents:
@@ -158,7 +170,7 @@ class AgentDocUpload(Resource):
 
                 # Only generate embeddings when there is actual texts
                 if len(extracted_text) > 0:
-                    total_chunks = vector_interface.add_document(processed_file["text"], processed_file["agent_id"], processed_file["filename"], processed_file["path"])
+                    total_chunks = vector_interface.add_document(processed_file["extracted_text"], processed_file["agent_id"], processed_file["filename"], processed_file["path"])
                     yield json.dumps({"file": processed_file["filename"], "step": "embedding_created"}) + "\n"
 
                 yield json.dumps({"file": processed_file["filename"], "step": "end"}) + "\n"
@@ -166,17 +178,15 @@ class AgentDocUpload(Resource):
         db.session.commit()
         return Response(generate_progress(), mimetype='application/json')
 
-    def add_document_id(self, filename, path, total_chunks):
-        print(f"{path}{filename}:{total_chunks}")
-        document_id = {
-            "path": path,
-            "filename": filename,
-            "total_chunks": total_chunks
-        }
+    def delete(self, id):
+        filename = request.json.get("filename")
+        path = request.json.get("path")
+        documents = DocumentIDs.query.filter_by(filename=filename, path=path).all()
 
-        new_data = DocumentIDs(**document_id)
-        db.session.add(new_data)
-        db.session.commit()
+        for document in documents:
+            for index in range(document.total_chunks):
+                vector_interface.delete_document(id, filename, path, document.total_chunks)
+
 
 class AgentChatApi(Resource):
     def post(self,id):

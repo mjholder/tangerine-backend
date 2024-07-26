@@ -25,8 +25,10 @@ class Agents(db.Model):
 
 
 class DocumentIDs(db.Model):
-    path = db.Column(db.String(50), nullable=False, unique=True)
-    filename = db.Column(db.String(50), nullable=False, unique=True)
+    id = db.Column(db.Integer, primary_key=True)
+    agent_id = db.Column(db.Integer)
+    path = db.Column(db.String(50), nullable=False)
+    filename = db.Column(db.String(50), nullable=False)
     total_chunks = db.Column(db.Integer, nullable=False)
 
     def __repr__(self):
@@ -66,18 +68,17 @@ class VectorStoreInterface():
         return text_splitter.split_documents(documents)
 
     # returns chunk count of document so agents know
-    def add_document(self, text, agent_id, filename, path):
+    def add_document(self, text, agent_id, filename, path): 
         docs = self.split_document(text, agent_id, filename, path)
         try:
-            self.store.add_documents(docs, ids=[f"{path}{filename}|{index}" for index in range(len(docs))])
+            self.store.add_documents(docs, ids=[f"{agent_id}|{path}{filename}|{chunk}" for chunk in range(len(docs))])
         except Exception as e:
             print(f"Error adding_documents: {e}")
     
-    def delete_document(self, filename, path, total_chunks):
-        for chunk in range(total_chunks):
-            self.store.delete(f"{path}{filename}|{chunk}")
-        
-        return
+    def delete_document(self, agent_id, filename, path, total_chunks):
+        import pdb
+        pdb.set_trace()
+        self.store.delete([f"{agent_id}|{path}{filename}|{chunk}" for chunk in range(total_chunks)])
 
     def search(self, query, agent_id):
         docs_with_score = self.store.max_marginal_relevance_search_with_score(query=query, filter={"agent_id": agent_id}, k=2)
